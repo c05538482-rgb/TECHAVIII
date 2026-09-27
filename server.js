@@ -568,7 +568,17 @@ function normalizeStoreRow(store, x) {
     originalPrice: original,
     discount: discount || 0,
     currency: "TRY",
-    url: x?.url || x?.product_url || x?.link || "#",
+    url: (() => {
+      const direct = x?.url || x?.product_url || x?.link;
+      if (direct) return direct;
+      if (store === "amazon") {
+        const asin = x?.asin || x?.ASIN || x?.product_asin || x?.product_id || x?.sku;
+        if (asin && /^[A-Z0-9]{10}$/i.test(String(asin))) {
+          return `https://www.amazon.com.tr/dp/${String(asin).toUpperCase()}`;
+        }
+      }
+      return "#";
+    })(),
     image: pickImage(x),
     rating: num(x?.rating ?? x?.score),
     reviews: Number(x?.comment_count ?? x?.review_count ?? x?.reviews_count ?? 0) || 0,
