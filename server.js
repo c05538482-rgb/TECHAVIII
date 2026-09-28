@@ -480,26 +480,33 @@ async function brightDataAmazonSearch(query) {
   const apiKey = process.env.BRIGHTDATA_API_KEY;
   if (!apiKey) throw new Error("BRIGHTDATA_API_KEY eksik");
 
+  const amazonUrl = `https://www.amazon.com.tr/s?k=${encodeURIComponent(query)}`;
+
+  // Bright Data's /scrape endpoint expects an object with an `input` array.
   const response = await fetch(
-    "https://api.brightdata.com/datasets/v3/scrape?dataset_id=gd_l7q7dkf244hwjntr0&format=json",
+    "https://api.brightdata.com/datasets/v3/scrape?dataset_id=gd_l7q7dkf244hwjntr0&format=json&include_errors=true",
     {
       method: "POST",
       headers: {
         "Authorization": `Bearer ${apiKey}`,
         "Content-Type": "application/json"
       },
-      body: JSON.stringify([{
-        url: `https://www.amazon.com.tr/s?k=${encodeURIComponent(query)}`
-      }])
+      body: JSON.stringify({
+        input: [{ url: amazonUrl, language: "tr" }]
+      })
     }
   );
 
+  const data = await response.json().catch(() => null);
+
   if (!response.ok) {
-    throw new Error(`Bright Data Amazon ${response.status}: ${await response.text()}`);
+    const msg = data?.error || data?.message || JSON.stringify(data);
+    throw new Error(`Bright Data Amazon ${response.status}: ${msg}`);
   }
 
-  return await response.json();
+  return data;
 }
+
 
 function normalizeStoreRow(store, x) {
   const title = x?.title || x?.name || x?.product_name || "Ürün";
@@ -541,8 +548,20 @@ function normalizeStoreRow(store, x) {
     original = firstNumber(x?.was_price, x?.regular_price, x?.original_price, x?.list_price);
     discount = num(x?.discount_percent ?? x?.discount);
   } else if (store === "amazon") {
-    price = num(x?.price?.value ?? x?.price);
-    original = num(x?.list_price?.value ?? x?.list_price ?? x?.was_price);
+    price = firstNumber(
+      x?.final_price,
+      x?.price?.value,
+      x?.price,
+      x?.current_price,
+      x?.sale_price
+    );
+    original = firstNumber(
+      x?.initial_price,
+      x?.list_price?.value,
+      x?.list_price,
+      x?.was_price,
+      x?.original_price
+    );
     discount = num(x?.discount_percent ?? x?.discount);
   } else if (store === "pazarama") {
     price = firstNumber(x?.basket_price, x?.lowest_price, x?.price);
@@ -640,7 +659,18 @@ async function searchStore(store, query) {
     throw new Error("Desteklenmeyen mağaza");
   }
 
-  let rows = response?.data?.results || response?.data?.products || [];
+  let rows;
+  if (store === "amazon") {
+    rows = Array.isArray(response)
+      ? response
+      : (response?.data?.results ||
+         response?.data?.products ||
+         response?.results ||
+         response?.products ||
+         []);
+  } else {
+    rows = response?.data?.results || response?.data?.products || [];
+  }
 
   // n11 keeps its existing enrichment. Trendyol gets a separate, isolated
   // detail lookup only to detect TY+ / Plus basket pricing. Hepsiburada is
