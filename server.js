@@ -476,6 +476,31 @@ async function enrichTrendyolRows(rows) {
   return enriched;
 }
 
+async function brightDataAmazonSearch(query) {
+  const apiKey = process.env.BRIGHTDATA_API_KEY;
+  if (!apiKey) throw new Error("BRIGHTDATA_API_KEY eksik");
+
+  const response = await fetch(
+    "https://api.brightdata.com/datasets/v3/scrape?dataset_id=gd_l7q7dkf244hwjntr0&format=json",
+    {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${apiKey}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify([{
+        url: `https://www.amazon.com.tr/s?k=${encodeURIComponent(query)}`
+      }])
+    }
+  );
+
+  if (!response.ok) {
+    throw new Error(`Bright Data Amazon ${response.status}: ${await response.text()}`);
+  }
+
+  return await response.json();
+}
+
 function normalizeStoreRow(store, x) {
   const title = x?.title || x?.name || x?.product_name || "Ürün";
   let price = null;
@@ -606,8 +631,8 @@ async function searchStore(store, query) {
   } else if (store === "vatan") {
     response = await reef("/vatan/v1/search", { query, page: 1 });
   } else if (store === "amazon") {
-    response = await reef("/amazon/v1/search", { query, marketplace: "amazon.com.tr", page: 1, max_results: 10 });
-  } else if (store === "pazarama") {
+      response = await brightDataAmazonSearch(query);
+    } else if (store === "pazarama") {
     response = await reef("/pazarama/v1/search", { query, page: 1 });
   } else if (store === "ciceksepeti") {
     response = await reef("/ciceksepeti/v1/search", { query, page: 1 });
